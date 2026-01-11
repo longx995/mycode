@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 图片文字移除 - 专业工作站版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js 核心 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PptxGenJS (PPTX 生成) -->
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f1f5f9; }
+        .drop-zone-active { border-color: #2563eb !important; background-color: #eff6ff !important; transform: scale(1.01); }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid #2563eb; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+       
+        .pdf-view-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--page-width, 200px), 1fr));
+            gap: 1.5rem;
+        }
+        .pdf-view-scroll {
+            display: flex;
+            gap: 1.5rem;
+            overflow-x: auto;
+            padding-bottom: 1rem;
+            white-space: nowrap;
+        }
+       
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+       
+        .page-card { transition: all 0.2s ease; border: 2px solid transparent; }
+        .page-card:hover { transform: translateY(-3px); border-color: #3b82f6; }
+        .slot-card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+       
+        .waiting-badge { background: #64748b; color: white; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; }
+    </style>
+</head>
+<body class="min-h-screen text-slate-900 pb-20">
+    <div class="max-w-7xl mx-auto px-4 py-10">
+        <!-- 标题与状态 -->
+        <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+            <div>
+                <h1 class="text-4xl font-black text-slate-900 tracking-tighter italic">AI 图片文字移除 <span class="text-blue-600">PRO</span> BY 观点LAB</h1>
+                <p class="text-slate-500 font-bold mt-2 text-lg">高精度布局还原 & 智慧内容填补系统</p>
+            </div>
+            <div class="text-right bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+                <span class="text-[10px] font-black text-slate-400 block uppercase tracking-widest">系统运行状态</span>
+                <span class="text-xs font-black text-emerald-600 flex items-center justify-end gap-1">
+                    <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> 自动注入金钥模式
+                </span>
+            </div>
+        </header>
+        <!-- PDF 解析区 -->
+        <section class="mb-12">
+            <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-slate-900 text-white rounded-lg flex items-center justify-center font-black">1</div>
+                    <h2 class="text-xl font-black text-slate-800">PDF 高精细解析</h2>
+                </div>
+               
+                <div id="pdf-controls" class="hidden flex flex-wrap items-center gap-4 bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
+                    <!-- 比例选择 -->
+                    <div class="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-xl border border-slate-100">
+                        <span class="text-[10px] font-black text-slate-400 uppercase">布局比例</span>
+                        <select id="pdf-ratio-select" class="text-xs font-black border-none bg-transparent outline-none cursor-pointer text-blue-600">
+                            <option value="16:9">16:9 (横)</option>
+                            <option value="9:16">9:16 (直)</option>
+                            <option value="4:3">4:3 (标)</option>
+                        </select>
+                    </div>
+                    <div class="flex bg-slate-100 p-1 rounded-xl">
+                        <button id="view-grid-btn" class="px-3 py-1 text-xs font-black rounded-lg bg-white shadow-sm text-blue-600">网格检视</button>
+                        <button id="view-scroll-btn" class="px-3 py-1 text-xs font-black rounded-lg text-slate-500 hover:text-slate-700">横向卷动</button>
+                    </div>
+                    <div class="flex items-center gap-2 border-l pl-4 border-slate-200">
+                        <span class="text-[10px] font-black text-slate-400 uppercase">预览缩放</span>
+                        <input type="range" id="pdf-zoom-range" min="100" max="350" value="200" class="h-1.5 w-24 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                    </div>
+                    <button id="add-all-pages-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg transition">一键导入排程</button>
+                </div>
+            </div>
+            <div id="pdf-drop-zone" class="bg-white rounded-3xl border-2 border-dashed border-slate-200 p-12 text-center cursor-pointer hover:border-blue-400 transition-all group shadow-sm">
+                <input type="file" id="pdf-file-input" class="hidden" accept="application/pdf">
+               
+                <div id="pdf-empty-state">
+                    <div class="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                    </div>
+                    <p class="text-xl font-black text-slate-800">点击或拖放 PDF 进行解析</p>
+                    <p class="text-slate-400 text-sm font-semibold mt-1 italic">系统将自动提取文字内容与排版，并支援一键导出至 PPTX</p>
+                </div>
+                <div id="pdf-preview-container" class="hidden text-left">
+                    <div class="flex items-center justify-between bg-slate-50 p-4 rounded-2xl mb-6 border border-slate-100">
+                        <div class="flex items-center gap-4">
+                            <span id="page-count-tag" class="bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase">0 PAGES</span>
+                            <span class="text-xs font-black text-slate-400">READY FOR ANALYSIS</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="pdf-to-pptx-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-xl font-black text-xs shadow-lg transition flex items-center gap-2">
+                                <span id="pptx-btn-text">视觉还原 PPTX</span>
+                                <div id="pptx-loader" class="loader !w-3 !h-3 !border-white !border-t-transparent hidden"></div>
+                            </button>
+                            <button id="clear-pdf-btn" class="text-xs font-black text-red-500 px-4 hover:underline">清除</button>
+                        </div>
+                    </div>
+                    <div id="pdf-pages-list" class="pdf-view-grid custom-scrollbar"></div>
+                </div>
+            </div>
+        </section>
+        <!-- 图片去字区 -->
+        <section>
+            <div class="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-black">2</div>
+                    <h2 class="text-xl font-black text-slate-800">图片去文字工作台</h2>
+                </div>
+                <div class="flex items-center gap-4 flex-wrap justify-end">
+                    <div id="result-export-group" class="hidden flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-100">
+                        <!-- 比例选择 -->
+                        <div class="flex items-center gap-2 border-r pr-3 mr-1 border-slate-100">
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-tighter">比例</span>
+                            <select id="work-ratio-select" class="text-xs font-black border-none bg-transparent outline-none cursor-pointer text-blue-600">
+                                <option value="16:9">16:9</option>
+                                <option value="9:16">9:16</option>
+                                <option value="4:3">4:3</option>
+                            </select>
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="pptx-custom-name-toggle" class="w-4 h-4 text-blue-600 rounded">
+                            <span class="text-[10px] font-black text-slate-400 uppercase">自定义档名</span>
+                        </label>
+                        <input type="text" id="pptx-filename-input" placeholder="简报名称..." class="hidden text-xs border border-slate-200 rounded-lg px-2 py-1 outline-none w-32 font-bold">
+                        <button id="export-results-pptx-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg">导出结果 PPTX</button>
+                    </div>
+                    <div class="flex items-center gap-4 bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-100">
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-tighter">槽位</label>
+                            <select id="slot-count-select" class="text-xs font-black border-none bg-transparent outline-none cursor-pointer text-blue-600">
+                                <option value="4">04</option>
+                                <option value="8">08</option>
+                                <option value="12">12</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                        <button id="clear-all-slots-btn" class="hidden text-xs font-black text-red-500 px-2 hover:underline transition-all">全部清除</button>
+                    </div>
+                    <button id="process-all-btn" class="bg-slate-900 hover:bg-black text-white px-6 py-2 rounded-xl text-xs font-black shadow-lg hidden transition">开始批次去字</button>
+                </div>
+            </div>
+            <div id="master-drop-zone" class="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center cursor-pointer hover:border-blue-400 transition-all mb-8 shadow-sm group">
+                <input type="file" id="master-file-input" class="hidden" accept="image/*" multiple>
+                <div class="flex flex-col items-center gap-2">
+                    <p class="text-slate-500 font-bold group-hover:text-blue-500 transition-colors">在此上传、从上方拖曳，或点击页面「＋」导入</p>
+                    <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Stable Queuing Logic Enabled</span>
+                </div>
+            </div>
+            <div id="slots-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"></div>
+        </section>
+    </div>
+    <!-- 槽位模板 -->
+    <template id="slot-template">
+        <div class="slot-card bg-white rounded-3xl border border-slate-100 p-5 flex flex-col shadow-sm">
+            <div class="empty-state flex-grow flex flex-col items-center justify-center text-slate-200 italic font-black text-sm min-h-[300px]">
+                <div class="w-10 h-10 border-2 border-dashed border-slate-100 rounded-lg flex items-center justify-center mb-2">+</div>
+                Empty
+            </div>
+            <div class="active-state hidden flex-grow flex flex-col">
+                <div class="flex justify-between mb-4">
+                    <span class="text-[10px] font-black text-blue-600 italic slot-label uppercase tracking-widest">SLOT 01</span>
+                    <button class="remove-btn text-slate-300 hover:text-red-500 transition font-black">×</button>
+                </div>
+                <div class="space-y-4">
+                    <div class="aspect-video bg-slate-50 rounded-xl overflow-hidden border border-slate-100 relative shadow-inner">
+                        <img class="original-img w-full h-full object-contain" src="">
+                        <div class="slot-loader absolute inset-0 bg-white/80 hidden flex-col items-center justify-center">
+                            <div class="loader mb-2"></div>
+                            <span class="text-[10px] font-black text-blue-600 animate-pulse uppercase">AI Analyzing</span>
+                        </div>
+                        <div class="slot-waiting absolute inset-0 bg-slate-900/10 hidden flex-col items-center justify-center backdrop-blur-[2px]">
+                            <span class="waiting-badge">排队中</span>
+                        </div>
+                    </div>
+                    <div class="aspect-video bg-slate-50 rounded-xl overflow-hidden border border-slate-100 relative shadow-inner flex items-center justify-center">
+                        <img class="result-img w-full h-full object-contain hidden" src="">
+                        <div class="placeholder text-slate-200 italic font-black text-[10px] uppercase">No Result</div>
+                    </div>
+                </div>
+                <div class="flex gap-2 mt-5">
+                    <button class="process-btn bg-slate-900 hover:bg-black text-white text-[10px] py-2.5 rounded-lg flex-1 font-black transition">去文字</button>
+                    <button class="download-btn bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] px-3 rounded-lg font-black disabled:opacity-20 transition" disabled>下载</button>
+                </div>
+            </div>
+        </div>
+    </template>
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl opacity-0 transition-all pointer-events-none z-50 text-sm font-black border border-slate-700"></div>
+    <script>
+        const apiKey = ""; // 自动注入金钥模式
+        const MODEL_OCR = "gemini-2.5-flash-preview-09-2025";
+        const MODEL_IMAGE = "gemini-2.5-flash-image-preview";
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdfPagesList = document.getElementById('pdf-pages-list');
+        const pdfPreviewContainer = document.getElementById('pdf-preview-container');
+        const pdfControls = document.getElementById('pdf-controls');
+        const pdfZoomRange = document.getElementById('pdf-zoom-range');
+        const viewGridBtn = document.getElementById('view-grid-btn');
+        const viewScrollBtn = document.getElementById('view-scroll-btn');
+        const slotsContainer = document.getElementById('slots-container');
+        const processAllBtn = document.getElementById('process-all-btn');
+        const clearAllSlotsBtn = document.getElementById('clear-all-slots-btn');
+        const resultExportGroup = document.getElementById('result-export-group');
+        const exportResultsPptxBtn = document.getElementById('export-results-pptx-btn');
+        const pptxCustomNameToggle = document.getElementById('pptx-custom-name-toggle');
+        const pptxFilenameInput = document.getElementById('pptx-filename-input');
+        const pdfRatioSelect = document.getElementById('pdf-ratio-select');
+        const workRatioSelect = document.getElementById('work-ratio-select');
+        const toast = document.getElementById('toast');
+        let currentPdfPageUrls = [];
+        let slots = [];
+        function showToast(msg, isError = false) {
+            toast.textContent = msg;
+            toast.style.backgroundColor = isError ? '#ef4444' : '#0f172a';
+            toast.classList.replace('opacity-0', 'opacity-100');
+            setTimeout(() => toast.classList.replace('opacity-100', 'opacity-0'), 3000);
+        }
+        const wait = (ms) => new Promise(res => setTimeout(res, ms));
+        // 增强型重试机制
+        async function fetchWithRetry(url, options, maxRetries = 6) {
+            const delays = [1000, 2000, 4000, 8000, 16000, 32000];
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) return await response.json();
+                   
+                    if (response.status === 429) {
+                        const waitTime = delays[i];
+                        showToast(`频率限制，等待 ${waitTime/1000} 秒后重试...`, true);
+                        await wait(waitTime);
+                        continue;
+                    }
+                   
+                    if (response.status >= 500) { await wait(2000); continue; }
+                    const errorJson = await response.json();
+                    throw new Error(errorJson.error?.message || `HTTP ${response.status}`);
+                } catch (e) {
+                    if (i === maxRetries - 1) throw e;
+                    await wait(delays[i]);
+                }
+            }
+        }
+        // --- 核心拖曳逻辑 ---
+        function setupDragAndDrop(element, onDropCallback) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                element.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+            element.addEventListener('dragover', () => element.classList.add('drop-zone-active'));
+            element.addEventListener('dragleave', () => element.classList.remove('drop-zone-active'));
+           
+            element.addEventListener('drop', (e) => {
+                element.classList.remove('drop-zone-active');
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    onDropCallback(files);
+                }
+            });
+        }
+        setupDragAndDrop(document.getElementById('pdf-drop-zone'), (files) => {
+            const file = files[0];
+            if (file.type === 'application/pdf') processPdf(file);
+            else showToast('请拖放 PDF 档案', true);
+        });
+        setupDragAndDrop(document.getElementById('master-drop-zone'), async (files) => {
+            for (const file of Array.from(files)) {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => fillSlot(ev.target.result);
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+        // --- PDF 解析 ---
+        document.getElementById('pdf-file-input').onchange = (e) => { if(e.target.files[0]) processPdf(e.target.files[0]); };
+        document.getElementById('pdf-drop-zone').onclick = (e) => { if(!e.target.closest('#pdf-preview-container')) document.getElementById('pdf-file-input').click(); };
+        async function processPdf(file) {
+            showToast('正在解析 PDF 视觉布局...');
+            currentPdfPageUrls = [];
+            pdfPreviewContainer.classList.remove('hidden');
+            pdfControls.classList.remove('hidden');
+            pdfPagesList.innerHTML = '';
+            document.getElementById('pdf-empty-state').classList.add('hidden');
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                document.getElementById('page-count-tag').textContent = `${pdf.numPages} PAGES`;
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2.5 });
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                    const dataUrl = canvas.toDataURL('image/png');
+                    currentPdfPageUrls.push(dataUrl);
+                    const div = document.createElement('div');
+                    div.className = 'page-card bg-white p-2 rounded-2xl border border-slate-100 shadow-sm relative group cursor-grab custom-scrollbar';
+                    div.style.width = `${pdfZoomRange.value}px`;
+                    div.innerHTML = `
+                        <div class="relative overflow-hidden rounded-xl">
+                            <img src="${dataUrl}" class="w-full">
+                            <button class="add-btn absolute top-2 right-2 bg-blue-600 text-white w-8 h-8 rounded-lg opacity-0 group-hover:opacity-100 transition shadow-xl font-black">＋</button>
+                        </div>
+                        <div class="text-[10px] font-black text-center mt-2 text-slate-400 uppercase tracking-widest">Page ${i}</div>
+                    `;
+                    div.querySelector('.add-btn').onclick = (e) => { e.stopPropagation(); fillSlot(dataUrl); };
+                    pdfPagesList.appendChild(div);
+                }
+            } catch (err) { showToast('PDF 解析失败', true); }
+        }
+        // --- PPTX 生成比例辅助 ---
+        function setPptxLayout(pptx, ratio) {
+            if (ratio === '9:16') {
+                pptx.defineLayout({ name: 'MOBILE', width: 5.625, height: 10 });
+                pptx.layout = 'MOBILE';
+            } else if (ratio === '4:3') {
+                pptx.layout = 'LAYOUT_4x3';
+            } else {
+                pptx.layout = 'LAYOUT_WIDE'; // 16:9
+            }
+        }
+        // --- PPTX 视觉还原 ---
+        document.getElementById('pdf-to-pptx-btn').onclick = async () => {
+            const btn = document.getElementById('pdf-to-pptx-btn');
+            const txt = document.getElementById('pptx-btn-text');
+            const ldr = document.getElementById('pptx-loader');
+            btn.disabled = true; ldr.classList.remove('hidden');
+            try {
+                const pptx = new PptxGenJS();
+                setPptxLayout(pptx, pdfRatioSelect.value);
+                for (let i = 0; i < currentPdfPageUrls.length; i++) {
+                    txt.textContent = `辨识中 (${i+1}/${currentPdfPageUrls.length})`;
+                    const base64 = currentPdfPageUrls[i].split(',')[1];
+                    const blocks = await callAiOcr(base64);
+                    const slide = pptx.addSlide(); slide.background = { fill: "FFFFFF" };
+                    if (blocks && Array.isArray(blocks) && blocks.length > 0) {
+                        blocks.forEach(block => {
+                            if (!block.text || !block.box_2d) return;
+                            let ymin = block.box_2d[0], xmin = block.box_2d[1], ymax = block.box_2d[2], xmax = block.box_2d[3];
+                            if (ymax <= 1 && xmax <= 1) {
+                                ymin *= 1000; xmin *= 1000; ymax *= 1000; xmax *= 1000;
+                            }
+                            const xP = xmin / 10;
+                            const yP = ymin / 10;
+                            const wP = (xmax - xmin) / 10;
+                            const hP = (ymax - ymin) / 10;
+                            slide.addText(block.text, {
+                                x: `${xP.toFixed(2)}%`,
+                                y: `${yP.toFixed(2)}%`,
+                                w: `${wP.toFixed(2)}%`,
+                                h: `${hP.toFixed(2)}%`,
+                                fontSize: block.font_size || 12,
+                                color: block.color?.replace('#','') || '000000',
+                                bold: block.is_bold || false,
+                                align: block.align || 'left',
+                                valign: 'middle',
+                                margin: 0
+                            });
+                        });
+                        showToast(`第 ${i+1} 页辨识到 ${blocks.length} 个文字块`);
+                    } else {
+                        showToast(`第 ${i+1} 页未侦测到明显文字`, true);
+                    }
+                    await wait(1800);
+                }
+                const name = pptxCustomNameToggle.checked && pptxFilenameInput.value.trim() ? pptxFilenameInput.value.trim() : `Restore_${Date.now()}`;
+                pptx.writeFile({ fileName: `${name}.pptx` });
+                showToast('PPTX 重建成功！');
+            } catch (err) {
+                console.error(err);
+                showToast(`辨识出错: ${err.message}`, true);
+            }
+            finally { btn.disabled = false; ldr.classList.add('hidden'); txt.textContent = '视觉还原 PPTX'; }
+        };
+        async function callAiOcr(base64) {
+            const prompt = `请辨识图片中「所有」文字区块。JSON 格式包含：text, box_2d [ymin, xmin, ymax, xmax], font_size, is_bold, align, color。坐标比例 0-1000。`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64 } }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                text: { type: "STRING" },
+                                box_2d: { type: "ARRAY", items: { type: "NUMBER" }, minItems: 4, maxItems: 4 },
+                                font_size: { type: "NUMBER" },
+                                is_bold: { type: "BOOLEAN" },
+                                align: { type: "STRING" },
+                                color: { type: "STRING" }
+                            },
+                            required: ["text", "box_2d"]
+                        }
+                    }
+                }
+            };
+            const data = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_OCR}:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            return textResult ? JSON.parse(textResult) : [];
+        }
+        // --- 槽位管理与去字 ---
+        function initSlots(count) {
+            const currentData = slots.map(s => ({ b64: s.originalBase64, res: s.resultImg.src }));
+            slotsContainer.innerHTML = ''; slots = [];
+            for (let i = 0; i < count; i++) {
+                const clone = document.getElementById('slot-template').content.cloneNode(true);
+                const card = clone.querySelector('.slot-card');
+                const data = {
+                    index: i, el: card,
+                    originalImg: card.querySelector('.original-img'),
+                    resultImg: card.querySelector('.result-img'),
+                    loader: card.querySelector('.slot-loader'),
+                    waitingOverlay: card.querySelector('.slot-waiting'),
+                    originalBase64: null
+                };
+                card.querySelector('.slot-label').textContent = `SLOT ${String(i+1).padStart(2, '0')}`;
+                card.querySelector('.process-btn').onclick = () => processSlot(i);
+                card.querySelector('.remove-btn').onclick = () => resetSlot(i);
+                slots.push(data); slotsContainer.appendChild(card);
+                if (currentData[i]?.b64) fillSlotWithData(i, currentData[i]);
+            }
+            updateGlobalControls();
+        }
+        function fillSlotWithData(i, item) {
+            const s = slots[i];
+            s.originalBase64 = item.b64;
+            s.originalImg.src = `data:image/png;base64,${item.b64}`;
+            s.el.querySelector('.empty-state').classList.add('hidden');
+            s.el.querySelector('.active-state').classList.remove('hidden');
+            if (item.res.startsWith('data')) {
+                s.resultImg.src = item.res; s.resultImg.classList.remove('hidden');
+                s.el.querySelector('.placeholder').classList.add('hidden');
+                s.el.querySelector('.download-btn').disabled = false;
+            }
+        }
+        function fillSlot(url) {
+            const slot = slots.find(s => !s.originalBase64);
+            if (!slot) return showToast('所有栏位皆已占用', true);
+            slot.originalBase64 = url.split(',')[1];
+            slot.originalImg.src = url;
+            slot.el.querySelector('.empty-state').classList.add('hidden');
+            slot.el.querySelector('.active-state').classList.remove('hidden');
+            updateGlobalControls();
+        }
+        async function processSlot(i) {
+            const s = slots[i]; if (!s.originalBase64) return;
+            s.loader.classList.remove('hidden');
+            try {
+                const prompt = "Please remove all text from this image. Fill the gaps using the surrounding background texture to make it look clean and natural.";
+                const data = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_IMAGE}:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: s.originalBase64 } }] }],
+                        generationConfig: { responseModalities: ['IMAGE'] }
+                    })
+                });
+                const b64 = data.candidates[0].content.parts.find(p => p.inlineData).inlineData.data;
+                s.resultImg.src = `data:image/png;base64,${b64}`;
+                s.resultImg.classList.remove('hidden');
+                s.el.querySelector('.placeholder').classList.add('hidden');
+                s.el.querySelector('.download-btn').disabled = false;
+                s.el.querySelector('.download-btn').onclick = () => {
+                    const a = document.createElement('a'); a.href = s.resultImg.src; a.download = `cleaned_${i+1}.png`; a.click();
+                };
+            } catch (e) { showToast(`处理失败: ${e.message}`, true); }
+            finally { s.loader.classList.add('hidden'); updateGlobalControls(); }
+        }
+        processAllBtn.onclick = async () => {
+            const pending = slots.filter(s => s.originalBase64 && !s.resultImg.src.startsWith('data'));
+            if (pending.length === 0) return;
+            showToast(`队列启动：开始依序处理 ${pending.length} 张图片...`);
+            pending.forEach(s => s.waitingOverlay.classList.remove('hidden'));
+            for (const s of pending) {
+                s.waitingOverlay.classList.add('hidden');
+                await processSlot(s.index);
+                await wait(2000);
+            }
+            showToast('批次处理完成');
+        };
+        clearAllSlotsBtn.onclick = () => {
+            slots.forEach((_, i) => resetSlot(i));
+            showToast('工作台已全部清除');
+        };
+        // --- 控制项事件 ---
+        pdfZoomRange.oninput = (e) => {
+            const val = e.target.value;
+            document.querySelectorAll('.page-card').forEach(div => div.style.width = `${val}px`);
+        };
+        viewGridBtn.onclick = () => {
+            pdfPagesList.className = 'pdf-view-grid custom-scrollbar';
+            viewGridBtn.className = 'px-3 py-1 text-xs font-black rounded-lg bg-white shadow-sm text-blue-600';
+            viewScrollBtn.className = 'px-3 py-1 text-xs font-black rounded-lg text-slate-500 hover:text-slate-700';
+        };
+        viewScrollBtn.onclick = () => {
+            pdfPagesList.className = 'pdf-view-scroll custom-scrollbar';
+            viewScrollBtn.className = 'px-3 py-1 text-xs font-black rounded-lg bg-white shadow-sm text-blue-600';
+            viewGridBtn.className = 'px-3 py-1 text-xs font-black rounded-lg text-slate-500 hover:text-slate-700';
+        };
+        document.getElementById('add-all-pages-btn').onclick = () => currentPdfPageUrls.forEach(url => fillSlot(url));
+        document.getElementById('slot-count-select').onchange = (e) => initSlots(parseInt(e.target.value));
+        pptxCustomNameToggle.onchange = (e) => pptxFilenameInput.classList.toggle('hidden', !e.target.checked);
+       
+        exportResultsPptxBtn.onclick = () => {
+            const results = slots.filter(s => s.resultImg.src.startsWith('data:image'));
+            const pptx = new PptxGenJS();
+            setPptxLayout(pptx, workRatioSelect.value);
+           
+            results.forEach(s => pptx.addSlide().addImage({ data: s.resultImg.src, x: 0, y: 0, w: '100%', h: '100%' }));
+            const name = pptxCustomNameToggle.checked && pptxFilenameInput.value.trim() ? pptxFilenameInput.value.trim() : `Results_${Date.now()}`;
+            pptx.writeFile({ fileName: `${name}.pptx` });
+            showToast('结果已导出');
+        };
+        function resetSlot(i) {
+            const s = slots[i]; s.originalBase64 = null; s.resultImg.src = '';
+            s.resultImg.classList.add('hidden'); s.el.querySelector('.empty-state').classList.remove('hidden');
+            s.el.querySelector('.active-state').classList.add('hidden');
+            s.el.querySelector('.placeholder').classList.remove('hidden');
+            updateGlobalControls();
+        }
+        function updateGlobalControls() {
+            const hasProcessable = slots.some(s => s.originalBase64 && !s.resultImg.src.startsWith('data'));
+            const hasResults = slots.some(s => s.resultImg.src.startsWith('data:image'));
+            const hasAnyContent = slots.some(s => s.originalBase64);
+            processAllBtn.classList.toggle('hidden', !hasProcessable);
+            resultExportGroup.classList.toggle('hidden', !hasResults);
+            clearAllSlotsBtn.classList.toggle('hidden', !hasAnyContent);
+        }
+        document.getElementById('clear-pdf-btn').onclick = () => {
+            pdfPagesList.innerHTML = ''; currentPdfPageUrls = [];
+            pdfPreviewContainer.classList.add('hidden'); pdfControls.classList.add('hidden');
+            document.getElementById('pdf-empty-state').classList.remove('hidden');
+        };
+        document.getElementById('master-drop-zone').onclick = (e) => {
+            document.getElementById('master-file-input').click();
+        };
+        document.getElementById('master-file-input').onchange = (e) => {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => fillSlot(ev.target.result);
+                    reader.readAsDataURL(file);
+                }
+            });
+        };
+        initSlots(4);
+    </script>
+</body>
+</html>
